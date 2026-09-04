@@ -129,5 +129,4 @@ either fully succeeds or leaves no partial locks behind.
 
 ## License
 
-MIT — sample/reference code for learning purposes, based on the public
-DevelopersVoice article.
+MIT — sample/reference code for learning purposes.
