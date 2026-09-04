@@ -1,0 +1,26 @@
+# Event-driven autoscaling for saga consumers (article §8.2.1). CPU-based
+# HPA reacts too slowly to a RabbitMQ backlog spike; KEDA watches the queue
+# directly and scales workers within seconds of a backlog forming.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: booking-consumer
+spec:
+  scaleTargetRef:
+    name: booking-consumer-deployment
+  minReplicaCount: 2
+  maxReplicaCount: 50
+  triggers:
+    - type: rabbitmq
+      metadata:
+        host: RabbitMqConnection
+        queueName: booking-events
+        queueLength: "200"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rabbitmq-connection-secret
+type: Opaque
+stringData:
+  RabbitMqConnection: amqp://guest:guest@rabbitmq:5672

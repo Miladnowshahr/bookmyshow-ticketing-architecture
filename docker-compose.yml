@@ -1,0 +1,86 @@
+version: "3.9"
+
+# Local dev stack for the BookMyShow-style ticketing architecture.
+# `docker compose up -d` brings up every piece of infra the article
+# describes (Redis, Postgres, RabbitMQ, Mongo, Jaeger for traces) so the
+# booking API and gateway can run against real dependencies with
+# `dotnet run` from src/BookingApi and gateway/YarpGateway.
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ticketing
+      POSTGRES_USER: ticketing
+      POSTGRES_PASSWORD: ticketing
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./deploy/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketing"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672" # management UI: http://localhost:15672 (guest/guest)
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.58
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # UI: http://localhost:16686
+      - "4317:4317"   # OTLP gRPC — matches OpenTelemetry:OtlpEndpoint above
+
+  booking-api:
+    build:
+      context: .
+      dockerfile: src/BookingApi/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=ticketing;Username=ticketing;Password=ticketing"
+      ConnectionStrings__Redis: "redis:6379"
+      ConnectionStrings__RabbitMq: "amqp://guest:guest@rabbitmq:5672"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+    ports:
+      - "8080:8080"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/YarpGateway/Dockerfile
+    depends_on:
+      - booking-api
+    ports:
+      - "5000:8080"
